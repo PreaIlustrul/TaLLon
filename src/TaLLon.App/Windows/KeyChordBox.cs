@@ -85,10 +85,6 @@ public sealed class ToggleButton : System.Windows.Controls.Primitives.ToggleButt
 {
     public ToggleButton()
     {
-        Foreground = Brushes.White;
-        Background = new SolidColorBrush(Color.FromRgb(0x35, 0x35, 0x35));
-        BorderBrush = new SolidColorBrush(Color.FromRgb(0x3f, 0x3f, 0x3f));
-        Padding = new Thickness(6, 4, 6, 4);
         var t = new ControlTemplate(typeof(ToggleButton));
         var bd = new FrameworkElementFactory(typeof(Border), "bd");
         bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
@@ -100,10 +96,19 @@ public sealed class ToggleButton : System.Windows.Controls.Primitives.ToggleButt
         cp.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         bd.AppendChild(cp);
         t.VisualTree = bd;
+
+        // Defaults live in a Style so the IsChecked trigger can override them
+        // (a local Background value would outrank any trigger).
+        var style = new Style(typeof(ToggleButton));
+        style.Setters.Add(new Setter(TemplateProperty, t));
+        style.Setters.Add(new Setter(ForegroundProperty, Brushes.White));
+        style.Setters.Add(new Setter(BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x35, 0x35, 0x35))));
+        style.Setters.Add(new Setter(BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x3f, 0x3f, 0x3f))));
+        style.Setters.Add(new Setter(PaddingProperty, new Thickness(6, 4, 6, 4)));
         var on = new Trigger { Property = IsCheckedProperty, Value = true };
         on.Setters.Add(new Setter(BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x2f, 0x6e, 0xaf))));
         on.Setters.Add(new Setter(BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x4c, 0x9b, 0xe8))));
-        t.Triggers.Add(on);
-        Template = t;
+        style.Triggers.Add(on);
+        Style = style;
     }
 }

@@ -47,8 +47,9 @@ public partial class App : Application
         int si = Array.FindIndex(e.Args, a => a.Equals("--send", StringComparison.OrdinalIgnoreCase));
         if (si >= 0)
         {
+            bool leader = e.Args.Any(a => a.Equals("--leader", StringComparison.OrdinalIgnoreCase));
             if (si + 1 < e.Args.Length && KeyChord.TryParse(e.Args[si + 1], out var chord))
-                SpecialKeyEngine.InjectChord(chord, Config.SpecialKey);
+                SpecialKeyEngine.InjectChord(chord, Config.SpecialKey, leader);
             else
                 Log.Warn("--send: missing or invalid chord");
             Shutdown();
@@ -58,7 +59,8 @@ public partial class App : Application
         if (settingsOnly)
         {
             ShutdownMode = ShutdownMode.OnLastWindowClose;
-            OpenSettings();
+            int pi = Array.FindIndex(e.Args, a => a.Equals("--page", StringComparison.OrdinalIgnoreCase));
+            OpenSettings(pi >= 0 && pi + 1 < e.Args.Length ? e.Args[pi + 1] : null);
             return;
         }
 
@@ -116,11 +118,11 @@ public partial class App : Application
         Log.Info("config applied");
     }
 
-    public void OpenSettings()
+    public void OpenSettings(string? page = null)
     {
         if (Settings == null || !Settings.IsLoaded)
         {
-            Settings = new SettingsWindow(Store);
+            Settings = new SettingsWindow(Store, page);
             Settings.Closed += (_, _) => Settings = null;
         }
         Settings.Show();

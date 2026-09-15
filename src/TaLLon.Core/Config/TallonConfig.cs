@@ -86,7 +86,7 @@ public sealed class TallonConfig
     public List<LauncherConfig> Launchers { get; set; } = new()
     {
         new LauncherConfig { Name = "File Explorer", Chord = "Special+E", Command = "explorer.exe" },
-        new LauncherConfig { Name = "Browser", Chord = "Special+B", Command = "https://" },
+        new LauncherConfig { Name = "Browser", Chord = "Special+B", Command = "https://www.google.com" },
     };
     public string TerminalCommand { get; set; } = "wt.exe";
     public string TerminalArgs { get; set; } = "";

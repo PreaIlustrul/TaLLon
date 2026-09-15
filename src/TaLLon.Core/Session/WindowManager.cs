@@ -235,6 +235,7 @@ public sealed class WindowManager
             if (Win32.IsIconic(m.Hwnd)) continue;
             if (Win32.IsZoomed(m.Hwnd)) Win32.RestoreNoActivate(m.Hwnd);
             Win32.SetVisibleRect(m.Hwnd, rects[i]);
+            Log.Info($"tile[{i}] {m} -> {rects[i]} (got {Win32.GetVisibleRect(m.Hwnd)})");
         }
     }
 

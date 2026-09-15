@@ -18,12 +18,21 @@ public partial class SettingsWindow : Window
     private readonly List<LauncherRow> _launcherRows = new();
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-    public SettingsWindow(ConfigStore store)
+    public SettingsWindow(ConfigStore store, string? page = null)
     {
         InitializeComponent();
         _store = store;
         _cfg = store.Current.Clone();
-        SpecialKeyCombo.ItemsSource = KeyNames.SpecialKeyChoices;
+        var choices = KeyNames.SpecialKeyChoices.ToList();
+        if (!choices.Contains(_cfg.SpecialKey.Key)) choices.Insert(0, _cfg.SpecialKey.Key);
+        SpecialKeyCombo.ItemsSource = choices;
+        switch (page?.ToLowerInvariant())
+        {
+            case "keys": NavKeys.IsChecked = true; break;
+            case "launchers": NavLaunchers.IsChecked = true; break;
+            case "appearance": NavAppearance.IsChecked = true; break;
+            case "about": NavAbout.IsChecked = true; break;
+        }
         MasterRatio.ValueChanged += (_, _) => MasterRatioText.Text = $"{MasterRatio.Value:P0}";
         BgImage.TextChanged += (_, _) => UpdatePreview();
         BuildKeysPanel();
@@ -59,7 +68,7 @@ public partial class SettingsWindow : Window
     {
         SpecialCopilot.IsChecked = _cfg.SpecialKey.Kind == SpecialKeyKind.Copilot;
         SpecialOther.IsChecked = _cfg.SpecialKey.Kind == SpecialKeyKind.Key;
-        SpecialKeyCombo.Text = _cfg.SpecialKey.Key;
+        SpecialKeyCombo.SelectedItem = _cfg.SpecialKey.Key;
         LeaderTimeout.Text = _cfg.LeaderTimeoutMs.ToString();
         TapThreshold.Text = _cfg.TapThresholdMs.ToString();
         HideTaskbar.IsChecked = _cfg.HideTaskbar;
@@ -88,7 +97,7 @@ public partial class SettingsWindow : Window
     {
         error = "";
         _cfg.SpecialKey.Kind = SpecialCopilot.IsChecked == true ? SpecialKeyKind.Copilot : SpecialKeyKind.Key;
-        var keyName = SpecialKeyCombo.Text.Trim();
+        var keyName = (SpecialKeyCombo.SelectedItem as string ?? "").Trim();
         if (_cfg.SpecialKey.Kind == SpecialKeyKind.Key)
         {
             if (!KeyNames.TryVk(keyName, out _)) { error = $"Unknown special key '{keyName}'."; return false; }

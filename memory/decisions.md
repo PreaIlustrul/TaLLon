@@ -41,3 +41,11 @@ D8 DPI: PerMonitorV2 manifest; all window geometry done in physical pixels via W
 D9 Default bindings (all "Special+..."): W toggle TaLLon, Space menu, T tile/restore, Enter terminal,
   Q close window, J/K focus next/prev, H/L master ratio, M monocle, F float focused, comma settings.
   Why: vxwm muscle memory where it doesn't collide with Windows habits; everything is remappable.
+
+D10 `--send` injects UNTAGGED key events (dwExtraInfo = 0) so the daemon's hook treats them as
+  real input; TaLLon's own replays/ALT trick are TAGGED (0x7A11) and skipped by the hook.
+  Why: one exe doubles as a scripting client and a test harness without a second code path.
+
+D11 Settings app is the same exe with `--settings` (separate process, no hook, no mutex).
+  Why: the daemon keeps running; the settings process writes config.json and the daemon's
+  FileSystemWatcher applies it live. If the daemon is not running, settings still work.

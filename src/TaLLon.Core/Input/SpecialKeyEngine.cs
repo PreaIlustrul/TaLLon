@@ -208,7 +208,7 @@ public sealed class SpecialKeyEngine : IDisposable
     /// then the command key. Used by `TaLLon.exe --send Special+W` so scripts can drive TaLLon.
     /// Untagged on purpose, so a running daemon's hook treats it like real input.
     /// </summary>
-    public static void InjectChord(KeyChord chord, SpecialKeyConfig special)
+    public static void InjectChord(KeyChord chord, SpecialKeyConfig special, bool leaderStyle = false)
     {
         var specialSeq = special.Kind == SpecialKeyKind.Copilot
             ? new[] { Win32.VK_LWIN, Win32.VK_LSHIFT, Win32.VK_F23 }
@@ -221,13 +221,20 @@ public sealed class SpecialKeyEngine : IDisposable
 
         if (chord.Mods.HasFlag(Mods.Special)) foreach (var k in specialSeq) Win32.SendKey(k, false, tagged: false);
         Thread.Sleep(60);
+        if (leaderStyle && chord.Mods.HasFlag(Mods.Special))
+        {
+            // Tap: release the special key first, then press the command key a bit later.
+            foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
+            Thread.Sleep(400);
+        }
         foreach (var m in mods) Win32.SendKey(m, false, tagged: false);
         Win32.SendKey(chord.Vk, false, tagged: false);
         Thread.Sleep(30);
         Win32.SendKey(chord.Vk, true, tagged: false);
         foreach (var m in Enumerable.Reverse(mods)) Win32.SendKey(m, true, tagged: false);
         Thread.Sleep(30);
-        if (chord.Mods.HasFlag(Mods.Special)) foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
+        if (!leaderStyle && chord.Mods.HasFlag(Mods.Special))
+            foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
     }
 
     /// <summary>Public escape hatch (e.g. the menu window closing): drop leader mode.</summary>

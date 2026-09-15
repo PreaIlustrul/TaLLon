@@ -47,3 +47,12 @@
 - Windows 11 Pro 10.0.26200, git 2.55, gh 2.97 (logged in as PreaIlustrul), node 24, winget.
 - .NET 8 SDK 8.0.425 installed 2026-09-15 via winget (Microsoft.DotNet.SDK.8, source winget).
   dotnet is at C:\Program Files\dotnet (may need adding to PATH in a fresh Git Bash).
+
+## Verified on this laptop (2026-09-15)
+- Injected Copilot chord (LWin, LShift, F23 via SendInput, untagged) is recognised by the 3-state
+  hook; the OS never opened Start/Copilot during tests. Real hardware key still to be confirmed.
+- New Windows 11 Notepad (Store app) is adopted and tiled; DWM offset correction gives exact rects.
+- WPF window with WS_EX_NOACTIVATE as canvas works: managed windows stay above it.
+- ShowWindowAsync(SW_SHOWMINNOACTIVE) / SW_SHOWNOACTIVATE round-trip restores the desktop incl.
+  the Claude desktop app that was hosting the session.
+- Screen: 3840x2400 @ 200 %; primary-monitor rect = (0,0)-(3840,2400).

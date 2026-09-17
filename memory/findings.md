@@ -56,3 +56,20 @@
 - ShowWindowAsync(SW_SHOWMINNOACTIVE) / SW_SHOWNOACTIVATE round-trip restores the desktop incl.
   the Claude desktop app that was hosting the session.
 - Screen: 3840x2400 @ 200 %; primary-monitor rect = (0,0)-(3840,2400).
+
+## 2026-09-16 (from the user's v0.1 test log and the v0.2 rebuild)
+- Physical Copilot key on this laptop: LWin/LShift/F23 arrive with >35 ms between them; a timer
+  based deferral leaked Win+Shift (log: "chord Special+Shift+Win+Space"). Timer removed (D13).
+- `netsh wlan show interfaces` needs Location permission on this Windows build (error 5). WinRT
+  NetworkInformation.GetInternetConnectionProfile() gives ProfileName (SSID) + signal bars without it.
+- WPF gotcha: an implicit TextBlock style in App resources overrides FontFamily inherited by a
+  Button's ContentPresenter → icon fonts show boxes. Use an explicit TextBlock with TemplateBindings.
+- Canvas z-order: HWND_TOP after showing puts the canvas above pre-existing windows. Fix: show the
+  canvas at HWND_TOP, then SetWindowPos(HWND_TOP) each managed window bottom-most first.
+- Segoe Fluent Icons glyphs used: E700 menu, E80F home, E713 settings, E8A9 overview, E8A1 mode,
+  E7E8 power, E701/E874/E873/E872/EB5E wifi, E702 bluetooth, E767/E74F/E992-E995 volume,
+  E83F/E859/E857/E855/E853/E850/E83E battery.
+- WinRT from WPF works with TFM net8.0-windows10.0.19041.0 (Microsoft.Windows.SDK.NET.Ref); used
+  for Windows.Devices.Radios (Bluetooth) and Windows.Networking.Connectivity (Wi-Fi).
+- Kill test: Stop-Process on the main exe while active → watchdog restored taskbar + placements
+  within 3 s and deleted session.json.

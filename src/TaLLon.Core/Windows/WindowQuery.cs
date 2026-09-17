@@ -2,12 +2,12 @@ using TaLLon.Core.Native;
 
 namespace TaLLon.Core.Windows;
 
-public sealed record WindowInfo(nint Hwnd, string Title, string Class, uint Pid, Win32.RECT Rect, bool Minimized)
+public sealed record WindowInfo(nint Hwnd, string Title, string Class, uint Pid, Win32.RECT Rect, bool Minimized, bool Maximized)
 {
-    public override string ToString() => $"0x{Hwnd:X} [{Class}] \"{Title}\" {Rect}{(Minimized ? " (min)" : "")}";
+    public override string ToString() => $"0x{Hwnd:X} [{Class}] \"{Title}\" {Rect}{(Minimized ? " (min)" : "")}{(Maximized ? " (max)" : "")}";
 }
 
-/// <summary>Enumerates the top-level windows a tiling WM should care about.</summary>
+/// <summary>Enumerates the top-level windows a window manager should care about.</summary>
 public static class WindowQuery
 {
     private static readonly HashSet<string> IgnoredClasses = new(StringComparer.Ordinal)
@@ -15,10 +15,10 @@ public static class WindowQuery
         "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow",
         "XamlExplorerHostIslandWindow", "Windows.Internal.Shell.TabProxyWindow", "ForegroundStaging",
         "MultitaskingViewFrame", "TaskListThumbnailWnd", "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland",
-        "Shell_InputSwitchTopLevelWindow", "SysShadow", "tooltips_class32", "#32770" /* dialogs handled as floating later */,
+        "Shell_InputSwitchTopLevelWindow", "SysShadow", "tooltips_class32", "#32770",
     };
 
-    /// <summary>Window classes / titles that belong to TaLLon itself and must never be managed.</summary>
+    /// <summary>Windows that belong to TaLLon itself and must never be managed.</summary>
     public static Func<nint, bool>? IsOwnWindow { get; set; }
 
     public static bool IsManageable(nint hwnd)
@@ -48,7 +48,7 @@ public static class WindowQuery
     {
         var rect = Win32.GetVisibleRect(hwnd);
         return new WindowInfo(hwnd, Win32.GetWindowTitle(hwnd), Win32.GetWindowClass(hwnd),
-            Win32.GetProcessId(hwnd), rect, Win32.IsIconic(hwnd));
+            Win32.GetProcessId(hwnd), rect, Win32.IsIconic(hwnd), Win32.IsZoomed(hwnd));
     }
 
     /// <summary>All manageable windows in z-order (topmost first).</summary>

@@ -2,7 +2,11 @@ using TaLLon.Core.Native;
 
 namespace TaLLon.Core.Windows;
 
-public enum WindowEventKind { Shown, Hidden, Destroyed, Foreground, MinimizeStart, MinimizeEnd, MoveSizeEnd, NameChanged, Uncloaked, Cloaked }
+public enum WindowEventKind
+{
+    Shown, Hidden, Destroyed, Foreground, MinimizeStart, MinimizeEnd, MoveSizeStart, MoveSizeEnd,
+    LocationChanged, NameChanged, Uncloaked, Cloaked,
+}
 
 /// <summary>
 /// SetWinEventHook (out-of-context) for window lifecycle. Callbacks arrive on the message loop of
@@ -21,10 +25,10 @@ public sealed class WinEventWatcher : IDisposable
     {
         if (_hooks.Count > 0) return;
         Hook(Win32.EVENT_SYSTEM_FOREGROUND, Win32.EVENT_SYSTEM_FOREGROUND);
-        Hook(Win32.EVENT_SYSTEM_MOVESIZEEND, Win32.EVENT_SYSTEM_MOVESIZEEND);
+        Hook(Win32.EVENT_SYSTEM_MOVESIZESTART, Win32.EVENT_SYSTEM_MOVESIZEEND);
         Hook(Win32.EVENT_SYSTEM_MINIMIZESTART, Win32.EVENT_SYSTEM_MINIMIZEEND);
         Hook(Win32.EVENT_OBJECT_DESTROY, Win32.EVENT_OBJECT_HIDE);
-        Hook(Win32.EVENT_OBJECT_NAMECHANGE, Win32.EVENT_OBJECT_NAMECHANGE);
+        Hook(Win32.EVENT_OBJECT_LOCATIONCHANGE, Win32.EVENT_OBJECT_NAMECHANGE);
         Hook(Win32.EVENT_OBJECT_CLOAKED, Win32.EVENT_OBJECT_UNCLOAKED);
     }
 
@@ -45,7 +49,9 @@ public sealed class WinEventWatcher : IDisposable
             Win32.EVENT_SYSTEM_FOREGROUND => WindowEventKind.Foreground,
             Win32.EVENT_SYSTEM_MINIMIZESTART => WindowEventKind.MinimizeStart,
             Win32.EVENT_SYSTEM_MINIMIZEEND => WindowEventKind.MinimizeEnd,
+            Win32.EVENT_SYSTEM_MOVESIZESTART => WindowEventKind.MoveSizeStart,
             Win32.EVENT_SYSTEM_MOVESIZEEND => WindowEventKind.MoveSizeEnd,
+            Win32.EVENT_OBJECT_LOCATIONCHANGE => WindowEventKind.LocationChanged,
             Win32.EVENT_OBJECT_NAMECHANGE => WindowEventKind.NameChanged,
             Win32.EVENT_OBJECT_CLOAKED => WindowEventKind.Cloaked,
             Win32.EVENT_OBJECT_UNCLOAKED => WindowEventKind.Uncloaked,

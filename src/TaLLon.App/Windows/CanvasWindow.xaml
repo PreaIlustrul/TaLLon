@@ -1,9 +1,9 @@
 <Window x:Class="TaLLon.App.Windows.CanvasWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="TaLLon Canvas" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        Title="TaLLon" WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
         ShowActivated="False" Background="#161A1F" Visibility="Hidden">
-    <Grid>
+    <Grid x:Name="Root" Background="Transparent">
         <Image x:Name="Bg" Stretch="UniformToFill" />
         <Border x:Name="Hint" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,20"
                 Background="#88000000" CornerRadius="6" Padding="12,6">

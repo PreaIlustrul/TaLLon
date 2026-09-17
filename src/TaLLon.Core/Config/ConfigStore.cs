@@ -19,7 +19,9 @@ public sealed class ConfigStore : IDisposable
     public static string Directory { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaLLon");
     public static string FilePath { get; } = Path.Combine(Directory, "config.json");
-    public static string LogPath { get; } = Path.Combine(Directory, "tallon.log");
+    public static string LogPath { get; } = Path.Combine(Directory, "TaLLon.log");
+    public static string SessionPath { get; } = Path.Combine(Directory, "session.json");
+    public static string PinnedPath { get; } = Path.Combine(Directory, "pinned-windows.json");
 
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _debounce;
@@ -83,7 +85,6 @@ public sealed class ConfigStore : IDisposable
         _debounce?.Dispose();
         _debounce = new System.Threading.Timer(_ =>
         {
-            // Ignore the echo of our own Save() for a short grace period.
             if ((DateTime.UtcNow - _lastSelfWrite).TotalMilliseconds < 800) return;
             try
             {
@@ -108,6 +109,7 @@ public sealed class ConfigStore : IDisposable
 public static class Log
 {
     private static readonly object Gate = new();
+    public static event Action<string>? Line;
     public static void Info(string msg) => Write("INFO", msg);
     public static void Warn(string msg) => Write("WARN", msg);
     public static void Error(string msg) => Write("ERR ", msg);
@@ -116,6 +118,7 @@ public static class Log
     {
         var line = $"{DateTime.Now:HH:mm:ss.fff} {level} {msg}";
         System.Diagnostics.Debug.WriteLine(line);
+        try { Line?.Invoke(line); } catch { }
         try
         {
             lock (Gate)

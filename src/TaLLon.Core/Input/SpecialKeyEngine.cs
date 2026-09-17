@@ -3,56 +3,58 @@ using TaLLon.Core.Native;
 
 namespace TaLLon.Core.Input;
 
-public enum SpecialState { Idle, Held, Leader }
+/// <summary>Shortcuts Windows normally owns that TaLLon takes over while the environment is active.</summary>
+public enum SystemShortcut { AltTab, WinTab, WinD, WinTap }
 
 /// <summary>
-/// The input brain. Sits on the low-level keyboard hook and:
+/// The input brain. Sits on the low-level hooks and:
 ///  * recognises the special key (Copilot chord LWin+LShift+F23, or any single key),
-///  * supports "hold" (modifier style) and "leader" (tap, then next key) usage,
-///  * turns key presses while special is active into <see cref="KeyChord"/>s and raises <see cref="ChordPressed"/>.
+///  * "tap" (press + release with nothing in between) → <see cref="SpecialTapped"/> (enter/exit),
+///  * "hold + key" → <see cref="ChordPressed"/> with a <see cref="KeyChord"/>,
+///  * while the environment is active, swallows Alt+Tab / Win+Tab / Win+D / lone Win and raises <see cref="SystemShortcutPressed"/>,
+///  * forwards right-clicks on window captions as <see cref="CaptionRightClick"/> (for the window context menu).
 /// All callbacks arrive on the hook thread; the app marshals to its UI thread.
 /// </summary>
 public sealed class SpecialKeyEngine : IDisposable
 {
-    private readonly KeyboardHook _hook;
+    private readonly HookThread _hooks;
     private readonly object _gate = new();
 
     private SpecialKeyConfig _special = new();
     private int _specialVk = Win32.VK_F23;
-    private int _leaderTimeoutMs = 2500;
-    private int _tapThresholdMs = 400;
 
-    // copilot chord deferral (D4)
-    private readonly List<KeyEvent> _pending = new();
-    private System.Threading.Timer? _pendingTimer;
-    private const int PendingWindowMs = 35;
-
-    // keys whose DOWN we swallowed as part of the special chord; swallow their UP too
+    // Copilot chord deferral (D4, revised): LWin is held back until we know whether F23 follows.
+    private readonly List<KeyEvent> _pendingWin = new();
+    // keys whose DOWN we swallowed; swallow their UP too
     private readonly HashSet<int> _chordKeys = new();
+    // physical modifier keys currently down that the OS also saw (for chord modifiers)
+    private readonly HashSet<int> _physMods = new();
+    private bool _swallowNextRUp;
 
     private bool _specialDown;
     private bool _usedWhileHeld;
-    private DateTime _specialDownAt;
-    private bool _leader;
-    private System.Threading.Timer? _leaderTimer;
 
-    /// <summary>Master switch: when false the hook passes everything through untouched.</summary>
+    /// <summary>Master switch: when false the hooks pass everything through untouched.</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>Set by the app; enables the Alt+Tab / Win+Tab takeover and the caption right-click.</summary>
+    public volatile bool EnvironmentActive;
+    /// <summary>App-provided: is this hwnd a managed window (for the caption right-click)?</summary>
+    public Func<nint, bool>? IsManagedWindow { get; set; }
 
-    public SpecialState State
-    {
-        get { lock (_gate) return _specialDown ? SpecialState.Held : _leader ? SpecialState.Leader : SpecialState.Idle; }
-    }
+    public bool SpecialHeld { get { lock (_gate) return _specialDown; } }
 
     public event Action<KeyChord>? ChordPressed;
-    public event Action<SpecialState>? StateChanged;
+    public event Action? SpecialTapped;
+    public event Action<bool>? SpecialHeldChanged;
+    public event Action<SystemShortcut>? SystemShortcutPressed;
+    public event Action<nint, int, int>? CaptionRightClick;
     /// <summary>Diagnostics: every raw key event (only when <see cref="Trace"/> is on).</summary>
     public event Action<KeyEvent>? RawKey;
-    public bool Trace { get; set; }
+    public volatile bool Trace;
 
     public SpecialKeyEngine()
     {
-        _hook = new KeyboardHook(OnKey);
+        _hooks = new HookThread(OnKey, OnMouse);
     }
 
     public void Apply(TallonConfig cfg)
@@ -60,15 +62,15 @@ public sealed class SpecialKeyEngine : IDisposable
         lock (_gate)
         {
             _special = cfg.SpecialKey;
-            _leaderTimeoutMs = Math.Max(300, cfg.LeaderTimeoutMs);
-            _tapThresholdMs = Math.Max(50, cfg.TapThresholdMs);
             _specialVk = _special.Kind == SpecialKeyKind.Copilot
                 ? Win32.VK_F23
                 : (KeyNames.TryVk(_special.Key, out var vk) ? vk : 0x14);
         }
     }
 
-    public void Start() => _hook.Install();
+    public void Start() => _hooks.Start();
+    public void Reinstall() => _hooks.Reinstall();
+    public void SetMouseHook(bool on) => _hooks.SetMouseHook(on);
 
     // -------------------------------------------------------------------------------------
 
@@ -76,8 +78,7 @@ public sealed class SpecialKeyEngine : IDisposable
     {
         if (Trace) RawKey?.Invoke(e);
         if (!Enabled) return false;
-        if (e.FromTallon) return false;               // our own replays / ALT trick
-
+        if (e.FromTallon) return false;               // our own replays / focus trick
         lock (_gate)
         {
             return e.Up ? OnKeyUp(e) : OnKeyDown(e);
@@ -88,32 +89,36 @@ public sealed class SpecialKeyEngine : IDisposable
     {
         bool copilot = _special.Kind == SpecialKeyKind.Copilot;
 
-        // Auto-repeat of the chord keys while holding the Copilot key: swallow silently.
-        if (_specialDown && _chordKeys.Contains(e.Vk)) return true;
+        // Auto-repeat of keys we already swallowed (special chord, chord keys): swallow silently.
+        if (_chordKeys.Contains(e.Vk)) return true;
 
         if (copilot)
         {
-            if (_pending.Count > 0)
+            if (_pendingWin.Count > 0)
             {
-                if (e.Vk == Win32.VK_LSHIFT) { _pending.Add(e); return true; }
+                if (e.Vk == Win32.VK_LSHIFT) { _pendingWin.Add(e); return true; }
                 if (e.Vk == Win32.VK_F23)
                 {
-                    // Chord complete: LWin, LShift, F23 -> Special down.
-                    CancelPending(replay: false);
+                    _pendingWin.Clear();
                     _chordKeys.Add(Win32.VK_LWIN); _chordKeys.Add(Win32.VK_LSHIFT); _chordKeys.Add(Win32.VK_F23);
                     SpecialPressed();
                     return true;
                 }
-                // Something else: the user really pressed Win (+key). Replay what we held back.
-                CancelPending(replay: true);
-                // fall through and treat this key normally
+                if (EnvironmentActive && (e.Vk == Win32.VK_TAB || e.Vk == Win32.VK_D))
+                {
+                    // Win+Tab / Win+D inside the environment: ours.
+                    foreach (var p in _pendingWin) _chordKeys.Add(p.Vk);
+                    _pendingWin.Clear();
+                    _chordKeys.Add(e.Vk);
+                    Raise(e.Vk == Win32.VK_TAB ? SystemShortcut.WinTab : SystemShortcut.WinD);
+                    return true;
+                }
+                // A real Win+something: release what we held back, then let this key through.
+                ReplayPending();
             }
-            else if (e.Vk == Win32.VK_LWIN && !_specialDown && !_leader)
+            else if (e.Vk == Win32.VK_LWIN && !_specialDown)
             {
-                _pending.Add(e);
-                _pendingTimer?.Dispose();
-                _pendingTimer = new System.Threading.Timer(_ => { lock (_gate) CancelPending(replay: true); },
-                    null, PendingWindowMs, Timeout.Infinite);
+                _pendingWin.Add(e);
                 return true;
             }
             else if (e.Vk == Win32.VK_F23)
@@ -131,32 +136,50 @@ public sealed class SpecialKeyEngine : IDisposable
             return true;
         }
 
-        if (!_specialDown && !_leader) return false;
+        if (KeyNames.IsModifierVk(e.Vk))
+        {
+            _physMods.Add(e.Vk);
+            return false;
+        }
 
-        // A key while special is active -> chord attempt.
-        if (KeyNames.IsModifierVk(e.Vk)) return false;   // let Shift/Ctrl/Alt through; we read them below
+        if (_specialDown)
+        {
+            var mods = Mods.Special;
+            if (IsMod(Win32.VK_LCONTROL, Win32.VK_RCONTROL, Win32.VK_CONTROL)) mods |= Mods.Ctrl;
+            if (IsMod(Win32.VK_LSHIFT, Win32.VK_RSHIFT, Win32.VK_SHIFT)) mods |= Mods.Shift;
+            if (IsMod(Win32.VK_LMENU, Win32.VK_RMENU, Win32.VK_MENU)) mods |= Mods.Alt;
+            if (IsMod(Win32.VK_LWIN, Win32.VK_RWIN, -1)) mods |= Mods.Win;
+            _usedWhileHeld = true;
+            _chordKeys.Add(e.Vk);
+            var chord = new KeyChord(mods, e.Vk);
+            Log.Info("chord " + chord);
+            ThreadPool.QueueUserWorkItem(_ => ChordPressed?.Invoke(chord));
+            return true;
+        }
 
-        var mods = Mods.Special;
-        if (IsDown(Win32.VK_CONTROL)) mods |= Mods.Ctrl;
-        if (IsDown(Win32.VK_SHIFT)) mods |= Mods.Shift;
-        if (IsDown(Win32.VK_MENU)) mods |= Mods.Alt;
-        if (IsDown(Win32.VK_LWIN) || IsDown(Win32.VK_RWIN)) mods |= Mods.Win;
-
-        _usedWhileHeld = true;
-        if (_leader) SetLeader(false);
-        var chord = new KeyChord(mods, e.Vk);
-        _chordKeys.Add(e.Vk);   // swallow its key-up as well
-        Log.Info("chord " + chord);
-        ThreadPool.QueueUserWorkItem(_ => ChordPressed?.Invoke(chord));
-        return true;
+        if (EnvironmentActive && e.Vk == Win32.VK_TAB && IsMod(Win32.VK_LMENU, Win32.VK_RMENU, Win32.VK_MENU))
+        {
+            // Alt+Tab inside the environment → overview. Mask the lone-Alt so menu bars don't activate.
+            _chordKeys.Add(e.Vk);
+            Win32.SendKey(Win32.VK_CONTROL, false); Win32.SendKey(Win32.VK_CONTROL, true);
+            Raise(SystemShortcut.AltTab);
+            return true;
+        }
+        return false;
     }
 
     private bool OnKeyUp(KeyEvent e)
     {
-        if (_pending.Count > 0)
+        if (_pendingWin.Count > 0 && (e.Vk == Win32.VK_LWIN || e.Vk == Win32.VK_LSHIFT))
         {
-            // Win tapped faster than our window: replay down, let the up through.
-            CancelPending(replay: true);
+            // Win (or Win+Shift) tapped with nothing else: normally that's the Start menu.
+            if (EnvironmentActive)
+            {
+                _pendingWin.RemoveAll(p => p.Vk == e.Vk);
+                if (e.Vk == Win32.VK_LWIN) { _pendingWin.Clear(); Raise(SystemShortcut.WinTap); }
+                return true;
+            }
+            ReplayPending();
             return false;
         }
         if (_chordKeys.Remove(e.Vk))
@@ -165,50 +188,67 @@ public sealed class SpecialKeyEngine : IDisposable
             if (isSpecial) SpecialReleased();
             return true;
         }
+        _physMods.Remove(e.Vk);
         return false;
     }
+
+    private bool IsMod(int l, int r, int generic) =>
+        _physMods.Contains(l) || _physMods.Contains(r) || (generic >= 0 && _physMods.Contains(generic));
 
     private void SpecialPressed()
     {
         if (_specialDown) return;                      // auto-repeat
-        if (_leader) { SetLeader(false); }             // second tap cancels leader
         _specialDown = true;
         _usedWhileHeld = false;
-        _specialDownAt = DateTime.UtcNow;
-        StateChanged?.Invoke(SpecialState.Held);
+        SpecialHeldChanged?.Invoke(true);
     }
 
     private void SpecialReleased()
     {
         _specialDown = false;
-        var held = (DateTime.UtcNow - _specialDownAt).TotalMilliseconds;
-        if (!_usedWhileHeld && held < _tapThresholdMs)
-            SetLeader(true);
-        else
-            StateChanged?.Invoke(SpecialState.Idle);
+        SpecialHeldChanged?.Invoke(false);
+        if (!_usedWhileHeld) ThreadPool.QueueUserWorkItem(_ => SpecialTapped?.Invoke());
     }
 
-    private void SetLeader(bool on)
+    private void Raise(SystemShortcut s) => ThreadPool.QueueUserWorkItem(_ => SystemShortcutPressed?.Invoke(s));
+
+    private void ReplayPending()
     {
-        _leader = on;
-        _leaderTimer?.Dispose();
-        _leaderTimer = null;
-        if (on)
-        {
-            _leaderTimer = new System.Threading.Timer(_ =>
-            {
-                lock (_gate) { if (_leader) { _leader = false; StateChanged?.Invoke(SpecialState.Idle); } }
-            }, null, _leaderTimeoutMs, Timeout.Infinite);
-        }
-        StateChanged?.Invoke(on ? SpecialState.Leader : (_specialDown ? SpecialState.Held : SpecialState.Idle));
+        if (_pendingWin.Count == 0) return;
+        var copy = _pendingWin.ToArray();
+        _pendingWin.Clear();
+        foreach (var k in copy) { Win32.SendKey(k.Vk, false, k.ScanCode); _physMods.Add(k.Vk); }
     }
+
+    // ---- mouse ---------------------------------------------------------------------------
+
+    private bool OnMouse(MouseEvent m)
+    {
+        if (!Enabled || !EnvironmentActive || m.Injected) return false;
+        if (m.Msg == Win32.WM_RBUTTONUP && _swallowNextRUp) { _swallowNextRUp = false; return true; }
+        if (m.Msg != Win32.WM_RBUTTONDOWN) return false;
+
+        var hwnd = Win32.WindowFromPoint(new Win32.POINT { X = m.X, Y = m.Y });
+        if (hwnd == 0) return false;
+        var root = Win32.GetAncestor(hwnd, Win32.GA_ROOT);
+        if (root == 0 || IsManagedWindow?.Invoke(root) != true) return false;
+        if (Win32.HitTest(root, m.X, m.Y) != Win32.HTCAPTION) return false;
+
+        _swallowNextRUp = true;
+        var (x, y) = (m.X, m.Y);
+        ThreadPool.QueueUserWorkItem(_ => CaptionRightClick?.Invoke(root, x, y));
+        return true;
+    }
+
+    // ---- scripting -----------------------------------------------------------------------
 
     /// <summary>
     /// Injects a chord as if typed: the special key as the Copilot sequence (or the configured key),
     /// then the command key. Used by `TaLLon.exe --send Special+W` so scripts can drive TaLLon.
-    /// Untagged on purpose, so a running daemon's hook treats it like real input.
+    /// A chord with no key ("Special") is a tap. Untagged on purpose, so a running instance's hook
+    /// treats it like real input.
     /// </summary>
-    public static void InjectChord(KeyChord chord, SpecialKeyConfig special, bool leaderStyle = false)
+    public static void InjectChord(KeyChord chord, SpecialKeyConfig special)
     {
         var specialSeq = special.Kind == SpecialKeyKind.Copilot
             ? new[] { Win32.VK_LWIN, Win32.VK_LSHIFT, Win32.VK_F23 }
@@ -221,42 +261,17 @@ public sealed class SpecialKeyEngine : IDisposable
 
         if (chord.Mods.HasFlag(Mods.Special)) foreach (var k in specialSeq) Win32.SendKey(k, false, tagged: false);
         Thread.Sleep(60);
-        if (leaderStyle && chord.Mods.HasFlag(Mods.Special))
+        if (chord.Vk != 0)
         {
-            // Tap: release the special key first, then press the command key a bit later.
-            foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
-            Thread.Sleep(400);
+            foreach (var m in mods) Win32.SendKey(m, false, tagged: false);
+            Win32.SendKey(chord.Vk, false, tagged: false);
+            Thread.Sleep(30);
+            Win32.SendKey(chord.Vk, true, tagged: false);
+            foreach (var m in Enumerable.Reverse(mods)) Win32.SendKey(m, true, tagged: false);
+            Thread.Sleep(30);
         }
-        foreach (var m in mods) Win32.SendKey(m, false, tagged: false);
-        Win32.SendKey(chord.Vk, false, tagged: false);
-        Thread.Sleep(30);
-        Win32.SendKey(chord.Vk, true, tagged: false);
-        foreach (var m in Enumerable.Reverse(mods)) Win32.SendKey(m, true, tagged: false);
-        Thread.Sleep(30);
-        if (!leaderStyle && chord.Mods.HasFlag(Mods.Special))
-            foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
+        if (chord.Mods.HasFlag(Mods.Special)) foreach (var k in Enumerable.Reverse(specialSeq)) Win32.SendKey(k, true, tagged: false);
     }
 
-    /// <summary>Public escape hatch (e.g. the menu window closing): drop leader mode.</summary>
-    public void CancelLeader() { lock (_gate) if (_leader) SetLeader(false); }
-
-    private void CancelPending(bool replay)
-    {
-        _pendingTimer?.Dispose();
-        _pendingTimer = null;
-        if (_pending.Count == 0) return;
-        var copy = _pending.ToArray();
-        _pending.Clear();
-        if (!replay) return;
-        foreach (var k in copy) Win32.SendKey(k.Vk, false, k.ScanCode);
-    }
-
-    private static bool IsDown(int vk) => (Win32.GetAsyncKeyState(vk) & 0x8000) != 0;
-
-    public void Dispose()
-    {
-        _hook.Dispose();
-        _pendingTimer?.Dispose();
-        _leaderTimer?.Dispose();
-    }
+    public void Dispose() => _hooks.Dispose();
 }

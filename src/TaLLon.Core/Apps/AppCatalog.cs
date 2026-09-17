@@ -88,7 +88,10 @@ public static class AppCatalog
         if (string.IsNullOrWhiteSpace(command)) return;
         try
         {
-            Process.Start(new ProcessStartInfo(Environment.ExpandEnvironmentVariables(command), args ?? "") { UseShellExecute = true });
+            if (command.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+                Process.Start(new ProcessStartInfo("explorer.exe", command) { UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo(Environment.ExpandEnvironmentVariables(command), args ?? "") { UseShellExecute = true });
         }
         catch (Exception ex) { Log.Warn($"launch '{command}' failed: {ex.Message}"); }
     }

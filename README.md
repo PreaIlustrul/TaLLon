@@ -2,35 +2,41 @@
 
 **An on-demand window manager for Windows 11.**
 
-TaLLon stays dormant in the tray until you press the *special key* (the Copilot key by
-default). Then the desktop becomes a clean canvas with your wallpaper, every window you open is
-tiled dwm/vxwm-style, and a centred command menu launches anything installed. Press the key
-again and Windows is exactly as you left it.
+Tap the *special key* (the Copilot key by default) and your desktop becomes TaLLon: an infinite
+canvas with a top bar, where every open program is a window you can drag around, tile, pin or put
+to sleep. Tap the key again and Windows is exactly as you left it.
 
-> Status: **pilot / v0.1**. It works on the author's laptop (Windows 11 Pro 26200, 3840×2400
-> at 200 %). Expect rough edges; see [Concerns](#known-limitations--concerns).
+> Status: **v0.2 pilot**. Tested on the author's laptop (Windows 11 Pro 26200, 3840×2400 at 200 %).
+> See [Known limitations](#known-limitations--concerns).
 
 ## What it does
 
-- **Dormant by default.** A low-level keyboard hook waits for the special key; nothing else
-  changes about Windows.
-- **Special key = Copilot key.** The Copilot key really sends `LWin+LShift+F23`; TaLLon
-  intercepts the whole chord so Windows never opens Copilot or the Start menu. Any other key
-  (CapsLock, Right Alt, F13–F24, …) can be the special key instead.
-- **Hold or tap.** Hold Special like a modifier, or tap it and press the next key (leader mode).
-- **Canvas.** `Special+W` minimises everything, hides the taskbar and shows a full-screen canvas
-  with a background image (default included, any image configurable).
-- **vxwm-style tiling.** New windows become *master* on the left; others stack on the right.
-  `Special+T` toggles between tiled and "back where they were". Monocle, floating, master
-  ratio, zoom-to-master, focus next/prev are all there.
-- **Command menu.** `Special+Space` opens a centred palette: exit TaLLon, tile/restore, open
-  terminal, focus an open window, or launch any of the programs installed on the PC (Start
-  menu + Store apps), with search.
-- **Launchers.** Bind any key to any program, file or URL.
-- **Settings app.** `TaLLon Settings` (desktop shortcut) — a dark, OBS-style editor for the
-  special key, every binding, launchers, background, tiling parameters and run-at-login.
+- **Dormant until tapped.** TaLLon sits in the tray. A low-level keyboard hook (on its own thread,
+  re-armed after sleep) waits for the special key. Nothing else about Windows changes.
+- **Copilot key done right.** The key really sends `LWin+LShift+F23`; TaLLon intercepts the whole
+  chord so Windows never opens Copilot or the Start menu. Any other key can be the special key.
+- **Tap = enter / exit. Hold + key = command.** No "leader" waiting mode.
+- **Everything comes with you.** On entry every open window is cascaded in the middle of the
+  canvas; the taskbar hides; the work area is adjusted so maximise fills the space under the bar.
+- **Infinite mode** (default): windows live on an unbounded plane. Pan by pushing the mouse against
+  a screen edge or two-finger scrolling over the canvas; the bar shows your coordinates; new windows
+  spawn centred at 1/12 of the screen; right-click a title bar to **pin** (position remembered across
+  sessions) or **hibernate** (process suspended until focused).
+- **Tiling mode**: dwm/vxwm master-stack. `Special+arrows` move focus, `Special+Shift+arrows` swap.
+- **Overview**: `Special+Tab`, `Alt+Tab` or `Win+Tab` lay every window out in a grid; click one to
+  jump to it.
+- **Top bar** (Omarchy-inspired): coordinates and mode on the left; menu, home, settings, overview,
+  mode and the clock in the centre; Wi-Fi, Bluetooth, volume and battery on the right.
+- **Focus ring** around the focused window; clicking the canvas focuses nothing.
+- **Command menu** (`Special+Space`): pinned apps, commands, open windows and every installed
+  program, with icons and search.
+- **One app.** The TaLLon window has a *Launch TaLLon* button and all settings (special key, every
+  binding, launchers with an app picker, pinned menu apps, appearance, infinite/tiling parameters,
+  diagnostics with a raw key log). Closing it keeps TaLLon in the tray. Starts with Windows.
+- **Crash-proof exit.** A watchdog process restores the taskbar, work area and every window
+  placement if TaLLon is killed while active; the next start does the same from `session.json`.
 
-Full list: [docs/keybindings.md](docs/keybindings.md).
+Full key table: [docs/keybindings.md](docs/keybindings.md).
 
 ## Build & run
 
@@ -38,51 +44,54 @@ Requires the .NET 8 SDK (`winget install Microsoft.DotNet.SDK.8 --source winget`
 
 ```bash
 dotnet build src/TaLLon.sln -c Release
-powershell -ExecutionPolicy Bypass -File tools/install-shortcuts.ps1   # desktop shortcuts
+powershell -ExecutionPolicy Bypass -File tools/install-shortcuts.ps1   # Desktop shortcut
 ```
 
-- `src\TaLLon.App\bin\Release\net8.0-windows\TaLLon.exe` — the listener (tray icon).
-- `TaLLon.exe --settings` — the settings app.
-- `TaLLon.exe --send Special+W` — drive a running TaLLon from scripts.
+- `src\TaLLon.App\bin\Release\net8.0-windows10.0.19041.0\TaLLon.exe` — the app (also registers
+  itself in the Start menu and at login on first start).
+- `TaLLon.exe --tray` starts hidden; `--send <chord>` drives a running instance; `--restore` puts
+  the desktop back.
 
-Config lives at `%APPDATA%\TaLLon\config.json` and is hot-reloaded. The log is next to it.
+Config: `%APPDATA%\TaLLon\config.json` (hot-reloaded). Log: `%APPDATA%\TaLLon\TaLLon.log`.
 
 ## Testing
 
-`tools/smoke-test.ps1` drives a running daemon end-to-end (enter, open two Notepads, tile,
-restore, menu, close, exit) and screenshots each stage; `tools/ui-test.ps1` covers the settings
-app and leader mode.
+`tools/smoke-test.ps1` drives a running TaLLon end-to-end (enter, spawn, tiling, overview, panning,
+menu, exit, then kills the process to prove the watchdog restores the desktop) and screenshots each
+stage. `tools/ui-test.ps1` covers the main window.
 
 ## Architecture
 
 ```
-src/TaLLon.Core      class library, no UI
-  Native/Win32.cs        P/Invoke surface (hooks, windows, DWM, SendInput)
-  Input/                 KeyChord parsing, WH_KEYBOARD_LL hook, SpecialKeyEngine (Copilot chord,
-                         hold/leader state machine)
-  Windows/               window enumeration/filtering, SetWinEventHook watcher
-  Layout/Layouts.cs      master-stack + monocle geometry
-  Session/WindowManager  enter/exit state machine, adoption, tiling, restore
-  Apps/AppCatalog.cs     Start menu + shell:AppsFolder enumeration, launching
-  Config/                JSON config + file watcher
-src/TaLLon.App       WPF: tray, canvas, OSD pill, command menu, settings window
-memory/              project memory (plan, findings, decisions, progress) — read PROGRESS.md
+src/TaLLon.Core            class library, no UI
+  Native/Win32.cs             P/Invoke surface (hooks, windows, DWM, work area, SendInput, NtSuspendProcess)
+  Input/HookThread.cs         WH_KEYBOARD_LL + WH_MOUSE_LL on a dedicated thread
+  Input/SpecialKeyEngine.cs   Copilot chord, tap vs hold, chords, Alt/Win-Tab takeover, caption right-click
+  Windows/                    window enumeration/filtering, SetWinEventHook watcher
+  Layout/Layouts.cs           master-stack, overview grid, cascade, directional neighbour
+  Session/Environment.cs      enter/exit, infinite viewport, tiling, overview, pin, hibernate
+  Session/SessionState.cs     session.json, pinned windows, CrashRestore, Watchdog
+  Status/SystemStatus.cs      battery, volume (Core Audio), Wi-Fi (netsh fallback)
+  Apps/AppCatalog.cs          Start menu + shell:AppsFolder enumeration, launching
+src/TaLLon.App             WPF: main window, tray, canvas, top bar, focus ring, menu, context menu,
+                           app picker, icon cache (IShellItemImageFactory), WinRT radio/network status
+memory/                    project memory (plan, findings, decisions, progress) — start at PROGRESS.md
 ```
-
-Why not a fork? GlazeWM is Rust/GPL, komorebi is source-available only, FancyWM/workspacer are
-always-on designs. TaLLon borrows their *techniques* (see `memory/decisions.md`) but the
-"dormant until summoned + canvas" model needed its own core.
 
 ## Known limitations / concerns
 
-- **Copilot key hold-repeat is untested on real hardware** (the author's tests inject the
-  chord). If holding the key doesn't keep it "down", use tap/leader mode — it works either way.
-- **Primary monitor only** in this pilot. Windows on other monitors are minimised on enter.
-- "Replace the desktop" is implemented by minimising other windows and hiding the taskbar; a
-  crash handler restores both, but if TaLLon is killed with Task Manager while active, run it
-  once more and exit (or press `Special+W` twice) to get the taskbar back.
-- Some apps ignore `SetWindowPos` sizes (minimum sizes, custom frames); they will overlap.
-- Virtual desktops are not used (the APIs are undocumented and change per build).
+- **Physical Copilot key**: chord detection now waits for F23 without a timer, which fixed the
+  first version's leak on this laptop. Use *Diagnostics → Show raw key events* to see what the
+  key sends if anything is odd.
+- **Touchpad gestures** (three-finger swipes) are handled inside Windows and do not reach TaLLon.
+  Map them to a shortcut in *Settings → Bluetooth & devices → Touchpad → Advanced gestures* and
+  bind that shortcut in TaLLon.
+- **Window content does not scale.** A window at 1/12 of the screen shows 1/12 of its content; a
+  scaled "always maximised" look would need thumbnail rendering (see memory/decisions.md D14).
+- **Hibernate** suspends the whole process (like Process Lasso). Apps with live network
+  connections may drop them. explorer.exe is never suspended.
+- **Primary monitor only**; other monitors are left alone.
+- Title-bar buttons stay the native three (custom two-button bars need custom frames per app).
 
 ## License
 

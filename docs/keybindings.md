@@ -1,37 +1,52 @@
 # TaLLon key bindings
 
-Everything is **Special + key**. *Special* is the Copilot key by default (configurable to
-CapsLock, Right Alt, F13–F24, …). Two ways to use it:
+**Special** is the Copilot key by default (configurable to CapsLock, Right Alt, F13–F24, …).
 
-- **Hold** it like Ctrl and press the command key.
-- **Tap** it, then press the command key within the leader timeout (2.5 s default). A pill at
-  the top of the screen shows that leader mode is armed.
+- **Tap** Special on its own (press and release, nothing in between): open / close the environment.
+- **Hold** Special and press another key: run a command. Everything below is `Special+key`.
 
-| Binding | Action | vxwm equivalent |
+| Binding | Action | Mode |
 |---|---|---|
-| Special+W | Open / close TaLLon (enter or leave the canvas) | — |
-| Special+Space | Command menu (exit, launch any app, focus a window, …) | Mod+p (dmenu) |
-| Special+T | Tile / restore: arrange side by side ⇄ put windows back where they were | Mod+t / Mod+f |
-| Special+Enter | Open terminal (Windows Terminal, falls back to PowerShell) | Mod+Shift+Return |
-| Special+Q | Close focused window | Mod+Shift+c |
-| Special+J / K | Focus next / previous window | Mod+j / k |
-| Special+H / L | Shrink / grow the master area | Mod+h / l |
-| Special+M | Toggle monocle (every window full-screen, one at a time) | Mod+m |
-| Special+F | Toggle floating for the focused window | Mod+Shift+Space |
-| Special+Z | Zoom focused window into the master slot | Mod+Return |
-| Special+E | Launcher: File Explorer (example launcher) | — |
-| Special+B | Launcher: default browser (example launcher) | — |
-| Special+, | Open the settings app | — |
-| Special+Shift+Q | Quit the background listener completely | Mod+Shift+q |
+| Special+Escape | Exit the environment (a tap of Special does the same) | both |
+| Special+Space | Command menu: pinned apps, commands, open windows, every installed app | both |
+| Special+M | Switch mode: infinite ⇄ tiling | both |
+| Special+Tab | Overview: all windows in a grid; press again or click one to leave | both |
+| Special+Home | Pan the view back to (0, 0) | infinite |
+| Special+Enter | Open terminal (Windows Terminal, falls back to PowerShell) | both |
+| Special+Q | Close focused window | both |
+| Special+← → ↑ ↓ | Focus the window in that direction | both |
+| Special+Shift+← → ↑ ↓ | Swap the focused window with the one in that direction | both |
+| Special+J / K | Focus next / previous window | both |
+| Special+P | Pin / unpin focused window (keeps its grid position between sessions) | infinite |
+| Special+H | Hibernate / wake focused window (suspends its process) | both |
+| Special+F | Toggle floating for the focused window | tiling |
+| Special+Z | Zoom focused window into the master slot | tiling |
+| Special+- / Special+= | Shrink / grow the master area | tiling |
+| Special+E | Launcher: File Explorer (example) | both |
+| Special+B | Launcher: browser (example) | both |
+| Special+, | Open the TaLLon window (settings) | both |
+| Special+Shift+Q | Quit TaLLon completely | both |
 
-All of these are editable in **TaLLon Settings → Key bindings**, or directly in
-`%APPDATA%\TaLLon\config.json`.
+Inside the environment TaLLon also takes over a few Windows shortcuts:
+
+| Shortcut | Inside the environment |
+|---|---|
+| Alt+Tab, Win+Tab | Overview (same as Special+Tab) |
+| Win (tap) | Command menu |
+| Win+D | Un-focus everything |
+
+Mouse: click a window to focus it; click the canvas to focus nothing; right-click a window's title bar
+for pin / hibernate / float / close; drag windows freely (infinite mode); two-finger scroll over the
+canvas or push the mouse against a screen edge to pan.
+
+All of these are editable in **TaLLon → Key bindings**, or directly in `%APPDATA%\TaLLon\config.json`.
 
 ## Scripting
 
 A running TaLLon can be driven from any script:
 
 ```
-TaLLon.exe --send Special+W            # hold-style chord
-TaLLon.exe --send Special+Space --leader   # tap-style chord
+TaLLon.exe --send Special            # tap: open / close the environment
+TaLLon.exe --send Special+M          # any chord
+TaLLon.exe --restore                 # put the desktop back (taskbar, work area, windows)
 ```

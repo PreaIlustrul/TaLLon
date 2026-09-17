@@ -49,3 +49,37 @@ D10 `--send` injects UNTAGGED key events (dwExtraInfo = 0) so the daemon's hook 
 D11 Settings app is the same exe with `--settings` (separate process, no hook, no mutex).
   Why: the daemon keeps running; the settings process writes config.json and the daemon's
   FileSystemWatcher applies it live. If the daemon is not running, settings still work.
+
+D12 (2026-09-16) No leader mode. Tap of the special key (press+release with no other key) enters /
+  exits the environment; hold + key runs a command. Configurable (tapTogglesEnvironment).
+  Why: user rejected the "press, then wait for the next key" mechanic.
+
+D13 Copilot chord deferral has NO timer: LWin is held back until F23 (chord), another key (replay
+  LWin then pass) or LWin-up (replay + pass → Start menu as normal). Inside the environment a lone
+  Win tap opens the TaLLon menu instead, Win+Tab / Alt+Tab open the overview, Win+D unfocuses.
+  Why: the physical key delivered the three events slower than the 35 ms window; LWin+LShift leaked
+  and Windows saw Win+Shift+Space. A bare Win tap only acts on release anyway, so deferring costs nothing.
+
+D14 Infinite mode moves REAL windows on an unbounded plane (viewport offset applied with
+  DeferWindowPos). Windows keep their native size/content; "content as if maximised, only shrunk"
+  is NOT implemented. Doing that needs DWM live thumbnails (DwmRegisterThumbnail) drawn on the
+  canvas with the real windows parked off-screen and input forwarded — a different architecture.
+  Why: real windows give full interactivity today; thumbnails are a decision for the user (Q1).
+
+D15 Touchpad gestures are not intercepted. Windows handles 3-finger swipes internally; they never
+  reach WH_KEYBOARD_LL. The supported path is mapping gestures to custom shortcuts in Windows
+  Settings and binding those shortcuts in TaLLon.
+
+D16 Hibernate = NtSuspendProcess on the window's process. Moves of a hibernated window wake it for
+  the duration of the SetWindowPos (WithAwake) because a suspended process cannot answer window
+  messages. explorer.exe and TaLLon itself are never suspended.
+
+D17 "Nothing is minimised" at Enter: every visible window (including minimised and maximised ones,
+  restored to normal) becomes a managed window cascaded in the centre; Exit restores the exact
+  WINDOWPLACEMENT saved at Enter. session.json + a watchdog process (`TaLLon.exe --watchdog <pid>`)
+  make this survive a Task-Manager kill.
+
+D18 Hooks live on a dedicated thread (HookThread) with its own message loop, thread priority
+  Highest, and are re-installed on resume, session switch and every 5 minutes.
+  Why: Windows silently drops low-level hooks whose callbacks time out; a busy WPF dispatcher must
+  never be able to cause that. Likely cause of "after closing the laptop the key stopped working".

@@ -22,3 +22,23 @@
   -> moved defaults into a Style.
 - Added `--send <chord> [--leader]` and `--settings --page <name>` CLI switches.
 - Wrote README.md, docs/keybindings.md, LICENSE (MIT), .gitattributes.
+
+## 2026-09-16 — session 2 (v0.2 rework from user feedback)
+- Read the v0.1 log: physical Copilot key leaked Win+Shift (timer too short); Alt-Tab restored a
+  minimised window that was then tiled full-screen over the canvas ("taken out of the environment").
+- Rewrote Core: Win32 (DeferWindowPos, work area, mouse hook, NtSuspend/Resume, hit test),
+  HookThread (dedicated thread), SpecialKeyEngine (tap/hold, no timer, system shortcut takeover,
+  caption right-click), Environment (infinite + tiling + overview + pin + hibernate), SessionState
+  (session.json, pinned, CrashRestore, Watchdog), Layouts (grid, cascade, neighbour), SystemStatus.
+- Rewrote App: single-instance App with --watchdog/--send/--restore/--tray, MainWindow (Launch
+  button + 7 pages), TrayIcon, IconCache (IShellItemImageFactory with alpha), StartupSetup (Run key,
+  Start-menu shortcut), CanvasWindow (scroll pan, click-unfocus), TopBarWindow, FocusBorderWindow,
+  FocusSinkWindow, MenuWindow (icons, pinned), WindowContextMenu, AppPickerDialog, radio/network
+  status via WinRT (TFM net8.0-windows10.0.19041.0).
+- Build gotchas: namespace TaLLon.Core.System shadows System → renamed Status; `global::` inside
+  an interpolated string is parsed as a format specifier; App.Main property collides with the
+  generated Main(); class Startup collides with Application.Startup event; Environment ambiguity.
+- Tests: tools/smoke-test.ps1 (tap enter, cascade, spawn 1/12, tiling, overview, mode round-trip,
+  edge pan, menu, close, tap exit, kill → watchdog restore) all pass; screenshots verified.
+- Fixed after screenshots: canvas above windows (RaiseManagedAboveCanvas), bar icon glyphs, Wi-Fi.
+- Docs updated: README, docs/keybindings.md; memory decisions D12–D18; renamed repo/folder to TaLLon.

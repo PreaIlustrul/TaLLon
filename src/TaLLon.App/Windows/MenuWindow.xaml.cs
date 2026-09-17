@@ -1,15 +1,27 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 using TaLLon.Core.Apps;
 using TaLLon.Core.Config;
 using TaLLon.Core.Native;
 
 namespace TaLLon.App.Windows;
 
-public sealed record MenuEntry(string Kind, string Title, string Hint, Action Run);
+public sealed class MenuEntry : INotifyPropertyChanged
+{
+    private BitmapSource? _icon;
+    public string Kind { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string Hint { get; init; } = "";
+    public string IconKey { get; init; } = "";
+    public Action Run { get; init; } = () => { };
+    public BitmapSource? Icon { get => _icon; set { _icon = value; PropertyChanged?.Invoke(this, new(nameof(Icon))); } }
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
 
-/// <summary>Special+Space: the centred command palette.</summary>
+/// <summary>Special+Space: the centred command palette (pinned apps, commands, windows, all apps).</summary>
 public partial class MenuWindow : Window
 {
     private nint _hwnd;
@@ -38,7 +50,6 @@ public partial class MenuWindow : Window
         BuildCommands(app);
         Search.Text = "";
         Refresh();
-        if (_hwnd == 0) new WindowInteropHelper(this).EnsureHandle();
         Show();
         var area = Win32.GetPrimaryMonitorRect(workArea: false);
         var src = PresentationSource.FromVisual(this);
@@ -49,26 +60,44 @@ public partial class MenuWindow : Window
         Activate();
         Search.Focus();
         Keyboard.Focus(Search);
-        App.Current.Engine.CancelLeader();
     }
 
     private void BuildCommands(App app)
     {
         _commands.Clear();
         var cfg = app.Config;
+        var env = app.Env;
         string B(string k) => cfg.Bindings.TryGetValue(k, out var v) ? v : "";
-        if (app.Wm.Active)
-            _commands.Add(new("command", "Exit TaLLon (back to desktop)", B(Actions.ToggleManager), () => app.Wm.Exit()));
+        if (env.Active)
+        {
+            _commands.Add(new() { Kind = "command", Title = "Exit TaLLon (back to the desktop)", Hint = "tap Special / " + B(Actions.ExitEnvironment), Run = () => env.Exit() });
+            _commands.Add(new() { Kind = "command", Title = env.Mode == EnvironmentMode.Infinite ? "Switch to tiling mode" : "Switch to infinite mode", Hint = B(Actions.SwitchMode), Run = () => env.SwitchMode() });
+            _commands.Add(new() { Kind = "command", Title = env.OverviewActive ? "Close overview" : "Overview of all windows", Hint = B(Actions.Overview), Run = () => env.ToggleOverview() });
+            if (env.Mode == EnvironmentMode.Infinite)
+                _commands.Add(new() { Kind = "command", Title = "Go to (0, 0)", Hint = B(Actions.GoHome), Run = () => env.GoHome() });
+        }
         else
-            _commands.Add(new("command", "Open TaLLon canvas", B(Actions.ToggleManager), () => app.Wm.Enter()));
-        _commands.Add(new("command", "Tile / restore windows", B(Actions.ToggleTiling), () => app.Wm.ToggleTiling()));
-        _commands.Add(new("command", "Toggle monocle layout", B(Actions.ToggleMonocle), () => app.Wm.ToggleMonocle()));
-        _commands.Add(new("command", "Open terminal", B(Actions.OpenTerminal), () => AppCatalog.LaunchTerminal(cfg)));
-        _commands.Add(new("command", "TaLLon settings", B(Actions.OpenSettings), () => app.OpenSettings()));
-        _commands.Add(new("command", "Refresh app list", "", () => { _ = AppCatalog.RefreshAsync().ContinueWith(_ => Dispatcher.BeginInvoke(Refresh)); }));
-        _commands.Add(new("command", "Quit TaLLon completely", B(Actions.QuitDaemon), () => app.Quit()));
+            _commands.Add(new() { Kind = "command", Title = "Launch TaLLon", Hint = "tap Special", Run = () => env.Enter() });
+        _commands.Add(new() { Kind = "command", Title = "Open terminal", Hint = B(Actions.OpenTerminal), Run = () => AppCatalog.LaunchTerminal(cfg) });
+        _commands.Add(new() { Kind = "command", Title = "TaLLon settings", Hint = B(Actions.OpenSettings), Run = () => app.ShowMain() });
+        _commands.Add(new() { Kind = "command", Title = "Refresh app list", Run = () => { _ = AppCatalog.RefreshAsync().ContinueWith(_ => Dispatcher.BeginInvoke(Refresh)); } });
+        _commands.Add(new() { Kind = "command", Title = "Quit TaLLon completely", Hint = B(Actions.QuitApp), Run = () => app.Quit() });
         foreach (var l in cfg.Launchers)
-            _commands.Add(new("launcher", l.Name, l.Chord, () => AppCatalog.LaunchCommand(l.Command, l.Args)));
+            _commands.Add(new() { Kind = "launcher", Title = l.Name, Hint = l.Chord, IconKey = IconKeyFor(l.Command), Run = () => AppCatalog.LaunchCommand(l.Command, l.Args) });
+    }
+
+    private static string IconKeyFor(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return "";
+        if (command.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return "";
+        if (command.Contains('\\') || command.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) return command;
+        // bare exe name like "explorer.exe": resolve on PATH / system dir
+        foreach (var dir in new[] { Environment.SystemDirectory, Environment.GetFolderPath(Environment.SpecialFolder.Windows) }
+                     .Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';')))
+        {
+            try { var p = System.IO.Path.Combine(dir, command); if (System.IO.File.Exists(p)) return p; } catch { }
+        }
+        return "";
     }
 
     private void Refresh()
@@ -77,23 +106,38 @@ public partial class MenuWindow : Window
         var q = Search.Text.Trim();
         var items = new List<MenuEntry>();
 
-        IEnumerable<MenuEntry> cmds = string.IsNullOrEmpty(q)
-            ? _commands
-            : _commands.Where(c => AppCatalog.Score(c.Title, q) > 0);
-        items.AddRange(cmds);
-
-        foreach (var w in app.Wm.LiveWindows())
+        // pinned apps first
+        foreach (var p in app.Config.PinnedApps)
         {
-            var title = w.Title;
-            if (string.IsNullOrEmpty(q) || AppCatalog.Score(title, q) > 0)
-            {
-                var h = w.Hwnd;
-                items.Add(new("window", title, w.Floating ? "floating" : "", () => app.Wm.Focus(h)));
-            }
+            if (!string.IsNullOrEmpty(q) && AppCatalog.Score(p.Name, q) == 0) continue;
+            var target = p.LaunchTarget;
+            items.Add(new() { Kind = "pinned", Title = p.Name, IconKey = target, Run = () => AppCatalog.Launch(new AppEntry(p.Name, target, "pinned")) });
         }
 
-        foreach (var a in AppCatalog.Search(q, string.IsNullOrEmpty(q) ? 30 : 40))
-            items.Add(new("app", a.Name, "", () => AppCatalog.Launch(a)));
+        items.AddRange(string.IsNullOrEmpty(q) ? _commands : _commands.Where(c => AppCatalog.Score(c.Title, q) > 0));
+
+        foreach (var w in app.Env.LiveWindows())
+        {
+            var title = w.Title;
+            if (!string.IsNullOrEmpty(q) && AppCatalog.Score(title, q) == 0) continue;
+            var h = w.Hwnd;
+            string hint = (w.Pinned ? "pinned " : "") + (w.Hibernated ? "hibernated " : "") + (w.Floating ? "floating" : "");
+            items.Add(new() { Kind = "window", Title = title, Hint = hint.Trim(), IconKey = w.ExePath, Run = () => app.Env.Focus(h) });
+        }
+
+        var pinnedTargets = new HashSet<string>(app.Config.PinnedApps.Select(p => p.LaunchTarget), StringComparer.OrdinalIgnoreCase);
+        foreach (var a in AppCatalog.Search(q, string.IsNullOrEmpty(q) ? 40 : 40))
+        {
+            if (pinnedTargets.Contains(a.LaunchTarget)) continue;
+            items.Add(new() { Kind = "app", Title = a.Name, IconKey = a.LaunchTarget, Run = () => AppCatalog.Launch(a) });
+        }
+
+        foreach (var it in items)
+        {
+            if (it.IconKey == "") continue;
+            var cached = app.Icons.Get(it.IconKey, bmp => it.Icon = bmp);
+            if (cached != null) it.Icon = cached;
+        }
 
         List.ItemsSource = items;
         if (items.Count > 0) List.SelectedIndex = 0;

@@ -1,6 +1,7 @@
 using TaLLon.Core.Apps;
 using TaLLon.Core.Config;
 using TaLLon.Core.Input;
+using TaLLon.Core.Layout;
 
 namespace TaLLon.App;
 
@@ -43,20 +44,31 @@ public sealed class ActionRouter
 
     private Action? Resolve(string name) => name switch
     {
-        Actions.ToggleManager => () => _app.Wm.Toggle(),
-        Actions.OpenMenu => () => _app.Menu?.Open(),
-        Actions.ToggleTiling => () => _app.Wm.ToggleTiling(),
+        Actions.ExitEnvironment => () => _app.Env.Exit(),
+        Actions.OpenMenu => () => _app.Menu.Open(),
+        Actions.SwitchMode => () => _app.Env.SwitchMode(),
+        Actions.Overview => () => _app.Env.ToggleOverview(),
+        Actions.GoHome => () => _app.Env.GoHome(),
         Actions.OpenTerminal => () => AppCatalog.LaunchTerminal(_app.Config),
-        Actions.CloseWindow => () => _app.Wm.CloseFocused(),
-        Actions.FocusNext => () => _app.Wm.FocusNext(+1),
-        Actions.FocusPrev => () => _app.Wm.FocusNext(-1),
-        Actions.ShrinkMaster => () => _app.Wm.AdjustMaster(-0.05),
-        Actions.GrowMaster => () => _app.Wm.AdjustMaster(+0.05),
-        Actions.ToggleMonocle => () => _app.Wm.ToggleMonocle(),
-        Actions.ToggleFloat => () => _app.Wm.ToggleFloatFocused(),
-        Actions.ZoomToMaster => () => _app.Wm.ZoomToMaster(),
-        Actions.OpenSettings => () => _app.OpenSettings(),
-        Actions.QuitDaemon => () => _app.Quit(),
+        Actions.CloseWindow => () => _app.Env.CloseFocused(),
+        Actions.FocusLeft => () => _app.Env.FocusDirection(Direction.Left),
+        Actions.FocusRight => () => _app.Env.FocusDirection(Direction.Right),
+        Actions.FocusUp => () => _app.Env.FocusDirection(Direction.Up),
+        Actions.FocusDown => () => _app.Env.FocusDirection(Direction.Down),
+        Actions.SwapLeft => () => _app.Env.SwapDirection(Direction.Left),
+        Actions.SwapRight => () => _app.Env.SwapDirection(Direction.Right),
+        Actions.SwapUp => () => _app.Env.SwapDirection(Direction.Up),
+        Actions.SwapDown => () => _app.Env.SwapDirection(Direction.Down),
+        Actions.FocusNext => () => _app.Env.FocusNext(+1),
+        Actions.FocusPrev => () => _app.Env.FocusNext(-1),
+        Actions.PinWindow => () => _app.Env.TogglePin(_app.Env.Focused),
+        Actions.HibernateWindow => () => _app.Env.ToggleHibernate(_app.Env.Focused),
+        Actions.ToggleFloat => () => _app.Env.ToggleFloatFocused(),
+        Actions.ZoomToMaster => () => _app.Env.ZoomToMaster(),
+        Actions.ShrinkMaster => () => _app.Env.AdjustMaster(-0.05),
+        Actions.GrowMaster => () => _app.Env.AdjustMaster(+0.05),
+        Actions.OpenSettings => () => _app.ShowMain(),
+        Actions.QuitApp => () => _app.Quit(),
         _ => null,
     };
 }

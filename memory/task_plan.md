@@ -16,7 +16,8 @@ Legend: [ ] todo  [~] in progress  [x] done  [!] blocked/concern
 - [x] Copilot chord: hold LWin back until F23 / other key / LWin-up, no timer (D13)
 - [x] Hook on its own thread; rehook on resume, session switch, every 5 min
 - [x] One app: main window with Launch button + settings; close → tray; single instance
-- [x] Naming: TaLLon everywhere (exe, tray, log, icon, repo, folder)
+- [x] Naming: TaLLon everywhere (exe, tray, log, icon, repo)
+- [ ] Local folder rename tallon -> TaLLon (blocked by session cwd; see progress.md)
 - [x] Start with Windows (Run key, `--tray`), Start-menu shortcut (self-repairing), desktop shortcut
 - [x] Everything managed: no minimising; existing windows cascade in the centre; exit restores placements
 - [x] Crash-proof: session.json + watchdog process + restore on next start + Diagnostics button

@@ -42,3 +42,10 @@
   edge pan, menu, close, tap exit, kill → watchdog restore) all pass; screenshots verified.
 - Fixed after screenshots: canvas above windows (RaiseManagedAboveCanvas), bar icon glyphs, Wi-Fi.
 - Docs updated: README, docs/keybindings.md; memory decisions D12–D18; renamed repo/folder to TaLLon.
+- Repo renamed to github.com/PreaIlustrul/TaLLon and pushed. Local folder rename tallon -> TaLLon
+  is BLOCKED while a Claude session has it as its working directory ("Device or resource busy");
+  do it from the parent folder next session: `mv tallon TaLLon_x && mv TaLLon_x TaLLon`, then start
+  TaLLon.exe once from the new path (it repairs the Run key, Start-menu and desktop shortcuts need
+  tools/install-shortcuts.ps1 again).
+- Running now: TaLLon.exe --tray from the tallon\ path; desktop shortcut TaLLon.lnk; Start-menu
+  TaLLon.lnk; HKCU Run "TaLLon" -> exe --tray.
